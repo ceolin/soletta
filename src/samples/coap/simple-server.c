@@ -244,12 +244,20 @@ main(int argc, char *argv[])
     struct light_context context = { .resource = &light };
     struct sol_coap_server *server;
     char old_led_state;
-    struct sol_network_link_addr servaddr = { .family = SOL_NETWORK_FAMILY_INET6,
-                                              .port = DEFAULT_UDP_PORT };
+    struct sol_socket_ip_coap_options options = {
+        .base = {
+            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
+            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_COAP_OPTIONS_SUB_API_VERSION, )
+        },
+        .addr = {
+            .family = SOL_NETWORK_FAMILY_INET6,
+            .port = DEFAULT_UDP_PORT,
+        },
+    };
 
     sol_init();
 
-    server = sol_coap_server_new(&servaddr);
+    server = sol_coap_server_new(SOL_SOCKET_TYPE_IP_COAP, &options.base);
     if (!server) {
         fprintf(stderr, "Could not create a coap server using port %d.\n", DEFAULT_UDP_PORT);
         return -1;

@@ -28,6 +28,7 @@
 #include "sol-mainloop.h"
 #include "sol-network.h"
 #include "sol-socket.h"
+#include "sol-socket-impl.h"
 #include "sol-str-slice.h"
 #include "sol-util-internal.h"
 #include "sol-vector.h"
@@ -65,6 +66,11 @@ SOL_LOG_INTERNAL_DECLARE(_sol_coap_log_domain, "coap");
 #else
 #define COAP_RESOURCE_CHECK_API(...)
 #endif
+
+struct sol_socket_ip_coap {
+    struct sol_socket base;
+    struct sol_socket *sock;
+};
 
 struct sol_coap_server {
     struct sol_vector contexts;
@@ -1686,79 +1692,30 @@ sol_coap_server_unref(struct sol_coap_server *server)
     sol_coap_server_destroy(server);
 }
 
-static int
-join_mcast_groups(struct sol_socket *s, const struct sol_network_link *link)
+SOL_API struct sol_coap_server *
+sol_coap_server_new(const struct sol_socket_type *type, struct sol_socket_options *options)
 {
-    struct sol_network_link_addr groupaddr = { };
-    struct sol_network_link_addr *addr;
-    uint16_t i;
-    int ret;
-
-    if (!(link->flags & SOL_NETWORK_LINK_RUNNING) && !(link->flags & SOL_NETWORK_LINK_MULTICAST))
-        return 0;
-
-    SOL_VECTOR_FOREACH_IDX (&link->addrs, addr, i) {
-        groupaddr.family = addr->family;
-
-        if (addr->family == SOL_NETWORK_FAMILY_INET) {
-            sol_network_link_addr_from_str(&groupaddr, IPV4_ALL_COAP_NODES_GROUP);
-            if ((ret = sol_socket_join_group(s, link->index, &groupaddr)) < 0)
-                return ret;
-
-            continue;
-        }
-
-        sol_network_link_addr_from_str(&groupaddr, IPV6_ALL_COAP_NODES_SCOPE_LOCAL);
-        if ((ret = sol_socket_join_group(s, link->index, &groupaddr)) < 0)
-            return ret;
-
-        sol_network_link_addr_from_str(&groupaddr, IPV6_ALL_COAP_NODES_SCOPE_SITE);
-        if ((ret = sol_socket_join_group(s, link->index, &groupaddr)) < 0)
-            return ret;
-    }
-
-    return 0;
-}
-
-static void
-network_event(void *data, const struct sol_network_link *link, enum sol_network_event event)
-{
-    struct sol_coap_server *server = data;
-
-    if (event != SOL_NETWORK_LINK_ADDED && event != SOL_NETWORK_LINK_CHANGED)
-        return;
-
-    if (!(link->flags & SOL_NETWORK_LINK_RUNNING) && !(link->flags & SOL_NETWORK_LINK_MULTICAST))
-        return;
-
-    join_mcast_groups(server->socket, link);
-}
-
-static struct sol_coap_server *
-sol_coap_server_new_full(struct sol_socket_ip_options *options, const struct sol_network_link_addr *servaddr)
-{
-    const struct sol_vector *links;
-    struct sol_network_link *link;
     struct sol_coap_server *server;
     struct sol_socket *s;
-    uint16_t i;
     int ret;
 
     SOL_LOG_INTERNAL_INIT_ONCE;
 
+    SOL_NULL_CHECK(type, NULL);
+    SOL_NULL_CHECK(options, NULL);
+
     server = calloc(1, sizeof(*server));
     SOL_NULL_CHECK(server, NULL);
 
-    options->base.data = server;
-    s = sol_socket_new(SOL_SOCKET_TYPE_IP, &options->base);
+    /* TODO: add a setter for this, then this function can receive a const options */
+    options->data = server;
+    options->on_can_read = on_can_read;
+    options->on_can_write = on_can_write;
+
+    s = sol_socket_new(type, options);
     if (!s) {
         SOL_WRN("Could not create socket (%d): %s", errno, sol_util_strerrora(errno));
         goto err;
-    }
-
-    if ((ret = sol_socket_bind(s, servaddr)) < 0) {
-        SOL_WRN("Could not bind socket (%d): %s", -ret, sol_util_strerrora(-ret));
-        goto err_bind;
     }
 
     server->refcnt = 1;
@@ -1772,80 +1729,13 @@ sol_coap_server_new_full(struct sol_socket_ip_options *options, const struct sol
     ret = sol_socket_set_read_monitor(s, true);
     SOL_INT_CHECK_GOTO(ret, < 0, err_monitor);
 
-    /* If secure is enabled it's only a unicast server. */
-    if (!options->secure && servaddr->port) {
-        /* From man 7 ip:
-         *
-         *   imr_address is the address of the local interface with which the
-         *   system should join the  multicast  group;  if  it  is  equal  to
-         *   INADDR_ANY,  an  appropriate  interface is chosen by the system.
-         *
-         * We can't join a multicast group on every interface. In the future
-         * we may want to add a default multicast route to the system and use
-         * that interface.
-         */
-        links = sol_network_get_available_links();
-
-        if (links) {
-            SOL_VECTOR_FOREACH_IDX (links, link, i) {
-                /* Not considering an error,
-                 * because direct packets will work still.
-                 */
-                if ((ret = join_mcast_groups(s, link)) < 0) {
-                    char *name = sol_network_link_get_name(link);
-                    SOL_WRN("Could not join multicast group, iface %s (%d): %s",
-                        name, -ret, sol_util_strerrora(-ret));
-                    free(name);
-                }
-            }
-        }
-    }
-
-    sol_network_subscribe_events(network_event, server);
-
-    SOL_DBG("New server %p on port %d%s", server, servaddr->port,
-        !options->secure ? "" : " (secure)");
-
     return server;
 
 err_monitor:
-err_bind:
     sol_socket_del(s);
 err:
     free(server);
     return NULL;
-}
-
-SOL_API struct sol_coap_server *
-sol_coap_server_new(const struct sol_network_link_addr *addr)
-{
-    return sol_coap_server_new_full(&((struct sol_socket_ip_options) {
-        .base = {
-            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
-            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_OPTIONS_SUB_API_VERSION, )
-            .on_can_read = on_can_read,
-            .on_can_write = on_can_write,
-        },
-        .family = addr->family,
-        .secure = false,
-        .reuse_addr = true,
-    }), addr);
-}
-
-SOL_API struct sol_coap_server *
-sol_coap_secure_server_new(const struct sol_network_link_addr *addr)
-{
-    return sol_coap_server_new_full(&((struct sol_socket_ip_options) {
-        .base = {
-            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
-            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_OPTIONS_SUB_API_VERSION, )
-            .on_can_read = on_can_read,
-            .on_can_write = on_can_write,
-        },
-        .family = addr->family,
-        .secure = true,
-        .reuse_addr = true,
-    }), addr);
 }
 
 SOL_API bool
@@ -2050,3 +1940,206 @@ sol_coap_packet_debug(struct sol_coap_packet *pkt)
         free(path);
 }
 #endif
+
+static int
+join_mcast_groups(struct sol_socket *s, const struct sol_network_link *link)
+{
+    struct sol_network_link_addr groupaddr = { };
+    struct sol_network_link_addr *addr;
+    uint16_t i;
+    int ret;
+
+    if (!(link->flags & SOL_NETWORK_LINK_RUNNING) && !(link->flags & SOL_NETWORK_LINK_MULTICAST))
+        return 0;
+
+    SOL_VECTOR_FOREACH_IDX (&link->addrs, addr, i) {
+        groupaddr.family = addr->family;
+
+        if (addr->family == SOL_NETWORK_FAMILY_INET) {
+            sol_network_link_addr_from_str(&groupaddr, IPV4_ALL_COAP_NODES_GROUP);
+            if ((ret = sol_socket_join_group(s, link->index, &groupaddr)) < 0)
+                return ret;
+
+            continue;
+        }
+
+        sol_network_link_addr_from_str(&groupaddr, IPV6_ALL_COAP_NODES_SCOPE_LOCAL);
+        if ((ret = sol_socket_join_group(s, link->index, &groupaddr)) < 0)
+            return ret;
+
+        sol_network_link_addr_from_str(&groupaddr, IPV6_ALL_COAP_NODES_SCOPE_SITE);
+        if ((ret = sol_socket_join_group(s, link->index, &groupaddr)) < 0)
+            return ret;
+    }
+
+    return 0;
+}
+
+static void
+network_event(void *data, const struct sol_network_link *link, enum sol_network_event event)
+{
+    struct sol_socket *s = data;
+
+    if (event != SOL_NETWORK_LINK_ADDED && event != SOL_NETWORK_LINK_CHANGED)
+        return;
+
+    if (!(link->flags & SOL_NETWORK_LINK_RUNNING) && !(link->flags & SOL_NETWORK_LINK_MULTICAST))
+        return;
+
+    join_mcast_groups(s, link);
+}
+
+static struct sol_socket *
+sol_socket_ip_coap_new(const struct sol_socket_options *options)
+{
+    int ret;
+    uint16_t i;
+    const struct sol_vector *links;
+    struct sol_network_link *link;
+    struct sol_socket_ip_coap *s;
+    struct sol_socket_ip_coap_options *opts;
+    struct sol_socket_ip_options ip_opts = {
+        .base = {
+            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
+            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_OPTIONS_SUB_API_VERSION, )
+        },
+    };
+
+    SOL_SOCKET_OPTIONS_CHECK_API_VERSION(options, NULL);
+
+    SOL_SOCKET_OPTIONS_CHECK_SUB_API_VERSION(options,
+        SOL_SOCKET_IP_COAP_OPTIONS_SUB_API_VERSION, NULL);
+
+    opts = (struct sol_socket_ip_coap_options *)options;
+
+    s = calloc(1, sizeof(*s));
+    SOL_NULL_CHECK(s, NULL);
+
+    ip_opts.base.on_can_read = options->on_can_read;
+    ip_opts.base.on_can_write = options->on_can_write;
+    ip_opts.base.data = options->data;
+    ip_opts.secure = opts->secure;
+    ip_opts.family = opts->addr.family;
+    ip_opts.reuse_addr = true;
+
+    s->sock = sol_socket_new(SOL_SOCKET_TYPE_IP, &ip_opts.base);
+    SOL_NULL_CHECK(s->sock, NULL);
+
+    if ((ret = sol_socket_bind(s->sock, &opts->addr)) < 0) {
+        SOL_WRN("Could not bind socket (%d): %s", -ret, sol_util_strerrora(-ret));
+        goto err_bind;
+    }
+
+    /* If secure is enabled it's only a unicast server. */
+    if (!opts->secure && opts->addr.port) {
+        /* From man 7 ip:
+         *
+         *   imr_address is the address of the local interface with which the
+         *   system should join the  multicast  group;  if  it  is  equal  to
+         *   INADDR_ANY,  an  appropriate  interface is chosen by the system.
+         *
+         * We can't join a multicast group on every interface. In the future
+         * we may want to add a default multicast route to the system and use
+         * that interface.
+         */
+        links = sol_network_get_available_links();
+
+        if (links) {
+            SOL_VECTOR_FOREACH_IDX (links, link, i) {
+                /* Not considering an error,
+                 * because direct packets will work still.
+                 */
+                if ((ret = join_mcast_groups(s->sock, link)) < 0) {
+                    char *name = sol_network_link_get_name(link);
+                    SOL_WRN("Could not join multicast group, iface %s (%d): %s",
+                        name, -ret, sol_util_strerrora(-ret));
+                    free(name);
+                }
+            }
+        }
+    }
+
+    sol_network_subscribe_events(network_event, s->sock);
+    s->base.type = SOL_SOCKET_TYPE_IP_COAP;
+
+    return &s->base;
+
+err_bind:
+    sol_socket_del(&s->base);
+    return NULL;
+}
+
+static int
+sol_socket_ip_coap_set_read_monitor(struct sol_socket *s, bool on)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    return sol_socket_set_read_monitor(sock->sock, on);
+}
+
+static int
+sol_socket_ip_coap_set_write_monitor(struct sol_socket *s, bool on)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    return sol_socket_set_write_monitor(sock->sock, on);
+}
+
+static void
+sol_socket_ip_coap_del(struct sol_socket *s)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    sol_network_unsubscribe_events(network_event, sock->sock);
+    sol_socket_del(sock->sock);
+    free(sock);
+}
+
+static ssize_t
+sol_socket_ip_coap_recvmsg(struct sol_socket *s, struct sol_buffer *buf,
+    struct sol_network_link_addr *cliaddr)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    return sol_socket_recvmsg(sock->sock, buf, cliaddr);
+}
+
+static ssize_t
+sol_socket_ip_coap_sendmsg(struct sol_socket *s, const struct sol_buffer *buf,
+    const struct sol_network_link_addr *cliaddr)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    return sol_socket_sendmsg(sock->sock, buf, cliaddr);
+}
+
+static int
+sol_socket_ip_coap_join_group(struct sol_socket *s, int ifindex,
+        const struct sol_network_link_addr *group)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    return sol_socket_join_group(sock->sock, ifindex, group);
+}
+
+static int
+sol_socket_ip_coap_bind(struct sol_socket *s, const struct sol_network_link_addr *addr)
+{
+    struct sol_socket_ip_coap *sock = (struct sol_socket_ip_coap *)s;
+
+    return sol_socket_bind(sock->sock, addr);
+}
+
+static const struct sol_socket_type _SOL_SOCKET_TYPE_IP_COAP = {
+    SOL_SET_API_VERSION(.api_version = SOL_SOCKET_TYPE_API_VERSION, )
+    .new = sol_socket_ip_coap_new,
+    .del = sol_socket_ip_coap_del,
+    .join_group = sol_socket_ip_coap_join_group,
+    .set_write_monitor = sol_socket_ip_coap_set_write_monitor,
+    .set_read_monitor = sol_socket_ip_coap_set_read_monitor,
+    .bind = sol_socket_ip_coap_bind,
+    .recvmsg = sol_socket_ip_coap_recvmsg,
+    .sendmsg = sol_socket_ip_coap_sendmsg,
+};
+
+SOL_API const struct sol_socket_type *SOL_SOCKET_TYPE_IP_COAP = &_SOL_SOCKET_TYPE_IP_COAP;

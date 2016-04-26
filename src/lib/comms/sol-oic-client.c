@@ -1181,16 +1181,23 @@ SOL_API struct sol_oic_client *
 sol_oic_client_new(void)
 {
     struct sol_oic_client *client = malloc(sizeof(*client));
-    struct sol_network_link_addr servaddr = { .family = SOL_NETWORK_FAMILY_INET6,
-                                              .port = 0 };
-
-
+    struct sol_socket_ip_coap_options options = {
+        .base = {
+            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
+            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_COAP_OPTIONS_SUB_API_VERSION, )
+        },
+        .addr = {
+            .family = SOL_NETWORK_FAMILY_INET6,
+            .port = 0,
+        },
+    };
     SOL_NULL_CHECK(client, NULL);
 
-    client->server = sol_coap_server_new(&servaddr);
+    client->server = sol_coap_server_new(SOL_SOCKET_TYPE_IP_COAP, &options.base);
     SOL_NULL_CHECK_GOTO(client->server, error_create_server);
 
-    client->dtls_server = sol_coap_secure_server_new(&servaddr);
+    options.secure = true;
+    client->dtls_server = sol_coap_server_new(SOL_SOCKET_TYPE_IP_COAP, &options.base);
     if (!client->dtls_server) {
         client->security = NULL;
 

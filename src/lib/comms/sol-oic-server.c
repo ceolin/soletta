@@ -494,8 +494,16 @@ sol_oic_server_ref(void)
     struct sol_oic_platform_information *plat_info = NULL;
     struct sol_oic_server_information *server_info = NULL;
     struct sol_oic_server_resource *res;
-    struct sol_network_link_addr servaddr = { .family = SOL_NETWORK_FAMILY_INET6,
-                                              .port = OIC_COAP_SERVER_UDP_PORT };
+    struct sol_socket_ip_coap_options options = {
+        .base = {
+            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
+            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_COAP_OPTIONS_SUB_API_VERSION, )
+        },
+        .addr = {
+            .family = SOL_NETWORK_FAMILY_INET6,
+            .port = OIC_COAP_SERVER_UDP_PORT,
+        },
+    };
     int r = -ENOMEM;
 
     if (oic_server.refcnt > 0) {
@@ -511,7 +519,7 @@ sol_oic_server_ref(void)
     server_info = init_static_server_info();
     SOL_NULL_CHECK_GOTO(server_info, error);
 
-    oic_server.server = sol_coap_server_new(&servaddr);
+    oic_server.server = sol_coap_server_new(SOL_SOCKET_TYPE_IP_COAP, &options.base);
     if (!oic_server.server) {
         r = -ENOMEM;
         goto error;
@@ -522,8 +530,10 @@ sol_oic_server_ref(void)
     SOL_INT_CHECK_GOTO(r, < 0, error);
 
     oic_server.security = NULL;
-    servaddr.port = OIC_COAP_SERVER_DTLS_PORT;
-    oic_server.dtls_server = sol_coap_secure_server_new(&servaddr);
+    options.addr.port = OIC_COAP_SERVER_DTLS_PORT;
+    options.secure = true;
+
+    oic_server.dtls_server = sol_coap_server_new(SOL_SOCKET_TYPE_IP_COAP, &options.base);
     if (!oic_server.dtls_server) {
         if (errno == ENOSYS) {
             SOL_INF("DTLS support not built in, OIC server running in insecure mode");

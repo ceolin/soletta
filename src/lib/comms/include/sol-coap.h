@@ -20,6 +20,7 @@
 
 #include <sol-network.h>
 #include <sol-str-slice.h>
+#include <sol-socket.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -342,6 +343,27 @@ struct sol_coap_resource {
     struct sol_str_slice path[];
 };
 
+struct sol_socket_ip_coap_options {
+    struct sol_socket_options base;
+#ifndef SOL_NO_API_VERSION
+#define SOL_SOCKET_IP_COAP_OPTIONS_SUB_API_VERSION (1)  /**< compile time API version to be checked during runtime */
+#endif
+
+    /**
+     * @brief The network address to be used.
+     * @see sol_network_link_addr
+     */
+    struct sol_network_link_addr addr;
+
+    /**
+     * @brief If the socket's data should be encrypted or not.
+     */
+    bool secure;
+};
+
+
+extern const struct sol_socket_type *SOL_SOCKET_TYPE_IP_COAP;
+
 /**
  * @brief Gets the CoAP protocol version of the packet.
  *
@@ -477,29 +499,12 @@ int sol_coap_header_set_id(struct sol_coap_packet *pkt, uint16_t id);
  * @a addr. If the server cannot be created, NULL will be returned and
  * errno will be set to indicate the reason.
  *
- * @param addr The address where the server will listen on.
+ * @param type The socket's type used to transport CoAP data.
+ * @param options The options that should be used to create the socket.
  *
  * @return A new server instance, or NULL in case of failure.
- *
- * @see sol_coap_secure_server_new()
  */
-struct sol_coap_server *sol_coap_server_new(const struct sol_network_link_addr *addr);
-
-/**
- * @brief Creates a new secure CoAP server instance.
- *
- * Creates a new, unsecured, CoAP server instance listening on address
- * @a addr. This server will encrypt communication with its endpoints
- * using DTLS. If the server cannot be created, NULL will be returned
- * and errno will be set to indicate the reason.
- *
- * @param addr The address where the server will listen on.
- *
- * @return A new server instance, or NULL in case of failure.
- *
- * @see sol_coap_server_new()
- */
-struct sol_coap_server *sol_coap_secure_server_new(const struct sol_network_link_addr *addr);
+struct sol_coap_server *sol_coap_server_new(const struct sol_socket_type *type, struct sol_socket_options *options);
 
 /**
  * @brief Take a reference of the given server.

@@ -105,9 +105,16 @@ main(int argc, char *argv[])
     struct sol_coap_packet *req;
     uint8_t observe = 0;
     int i, r;
-    struct sol_network_link_addr servaddr = { .family = SOL_NETWORK_FAMILY_INET6,
-                                              .port = 0 };
-
+    struct sol_socket_ip_coap_options options = {
+        .base = {
+            SOL_SET_API_VERSION(.api_version = SOL_SOCKET_OPTIONS_API_VERSION, )
+            SOL_SET_API_VERSION(.sub_api = SOL_SOCKET_IP_COAP_OPTIONS_SUB_API_VERSION, )
+        },
+        .addr = {
+            .family = SOL_NETWORK_FAMILY_INET6,
+            .port = 0,
+        },
+    };
     uint8_t token[4] = { 0x41, 0x42, 0x43, 0x44 };
 
     sol_init();
@@ -117,7 +124,7 @@ main(int argc, char *argv[])
         return 0;
     }
 
-    server = sol_coap_server_new(&servaddr);
+    server = sol_coap_server_new(SOL_SOCKET_TYPE_IP_COAP, &options.base);
     if (!server) {
         SOL_WRN("Could not create a coap server.");
         return -1;
