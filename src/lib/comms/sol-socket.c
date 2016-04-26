@@ -30,7 +30,7 @@
 
 #include <errno.h>
 
-SOL_API struct sol_socket *
+static struct sol_socket *
 sol_socket_ip_new(const struct sol_socket_options *options)
 {
     struct sol_socket *s;
@@ -60,6 +60,24 @@ sol_socket_ip_new(const struct sol_socket_options *options)
     }
 
     return s;
+}
+
+static const struct sol_socket_type _SOL_SOCKET_TYPE_IP = {
+    SOL_SET_API_VERSION(.api_version = SOL_SOCKET_TYPE_API_VERSION, )
+    .new = sol_socket_ip_new
+};
+
+SOL_API const struct sol_socket_type *SOL_SOCKET_TYPE_IP = &_SOL_SOCKET_TYPE_IP;
+
+SOL_API struct sol_socket *
+sol_socket_new(const struct sol_socket_type *type, const struct sol_socket_options *options)
+{
+    errno = EINVAL;
+
+    SOL_SOCKET_TYPE_CHECK_API_VERSION(type, NULL);
+    SOL_SOCKET_OPTIONS_CHECK_API_VERSION(options, NULL);
+
+    return type->new(options);
 }
 
 SOL_API void

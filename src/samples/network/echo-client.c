@@ -140,7 +140,7 @@ startup_client(void)
         goto err;
     }
 
-    sock = sol_socket_ip_new(&options.base);
+    sock = sol_socket_new(SOL_SOCKET_TYPE_IP, &options.base);
     if (!sock) {
         fprintf(stderr, "ERROR: Could not create the socket\n");
         goto err;

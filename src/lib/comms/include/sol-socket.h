@@ -122,6 +122,14 @@ struct sol_socket_type {
 #endif
 
     /**
+     * @brief Function called to create the socket.
+     *
+     * @li @c options the optiosn used to create the socket.
+     * @li returns the socket in success, otherwise @c NULL is returned.
+     */
+    struct sol_socket *(*new)(const struct sol_socket_options *options);
+
+    /**
      * @brief Function to be called when the socket is deleted.
      *
      * @li @c s the socket pointer (this)
@@ -213,28 +221,32 @@ struct sol_socket {
     const struct sol_socket_type *type;
 };
 
+extern const struct sol_socket_type *SOL_SOCKET_TYPE_IP;
+
 /**
  * @brief Creates an endpoint for communication.
  *
- * This function creates a socket using the system default implementation.
+ * This function creates a socket using the given @c type.
  *
+ * @param type The socket's type.
  * @param options The socket's options.
  *
  * @return a handle to the socket on success, otherwise @c NULL is returned.
  *
  * @see sol_socket_del()
  * @see sol_socket_options
+ * @see sol_socket_type
  */
-struct sol_socket *sol_socket_ip_new(const struct sol_socket_options *options);
+struct sol_socket *sol_socket_new(const struct sol_socket_type *type, const struct sol_socket_options *options);
 
 /**
  * @brief Destroy the @a socket instance.
  *
  * Destroy and release all the socket resources
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  *
- * @see sol_socket_ip_new()
+ * @see sol_socket_new()
  */
 void sol_socket_del(struct sol_socket *s);
 
@@ -242,14 +254,14 @@ void sol_socket_del(struct sol_socket *s);
  * @brief Adds a function to be called when the socket had data
  * to be read.
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  * @param on @c true to start to monitor the socket. When the socket is
  * available to read the callback set on @c sol_socket_options
  * will be called, if @c false it stops monitoring the socket to read.
  *
  * @return @c 0 on success, error code (always negative) otherwise.
  *
- * @see sol_socket_ip_new()
+ * @see sol_socket_new()
  */
 int sol_socket_set_read_monitor(struct sol_socket *s, bool on);
 
@@ -257,14 +269,14 @@ int sol_socket_set_read_monitor(struct sol_socket *s, bool on);
  * @brief Adds a function to be called when the socket is able
  * to send data.
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  * @param on @c true to start to monitor the socket. When the socket is
  * available to write the callback set on @c sol_socket_options
  * will be called, if @c false it stops monitoring the socket to write.
  *
  * @return @c 0 on success, error code (always negative) otherwise.
  *
- * @see sol_socket_ip_new()
+ * @see sol_socket_new()
  */
 int sol_socket_set_write_monitor(struct sol_socket *s, bool on);
 
@@ -278,7 +290,7 @@ int sol_socket_set_write_monitor(struct sol_socket *s, bool on);
  * way, the user may allocate the exact number of bytes to hold the
  * message contents.
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  * @param buffer the data buffer that will be used to receive the data.
  * If @a buffer does not has the flags SOL_BUFFER_FLAGS_FIXED_CAPACITY or
  * SOL_BUFFER_FLAGS_MEMORY_NOT_OWNED this functions will allocate/re-allocate.
@@ -297,7 +309,7 @@ ssize_t sol_socket_recvmsg(struct sol_socket *s, struct sol_buffer *buffer,
 /**
  * @brief Transmits a message using the socket.
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  * @param buffer The data to be transmitted.
  * @param cliaddr The address which the data will be sent.
  *
@@ -312,7 +324,7 @@ ssize_t sol_socket_sendmsg(struct sol_socket *s, const struct sol_buffer *buffer
  * @brief Joins a multicast group.
  * IPv4 and IPv6 address are possible.
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  * @param ifindex The index of the interface to be used.
  * Interface index is available in @a sol_network_link.
  * @param group The address of the group to join.
@@ -331,7 +343,7 @@ int sol_socket_join_group(struct sol_socket *s, int ifindex, const struct sol_ne
  * Assigns the  address specified by @a addr to the socket
  * referred to @a s
  *
- * @param s The value got with @c sol_socket_ip_new()
+ * @param s The value got with @c sol_socket_new()
  * @param addr The address to associate.
  *
  * @return @c 0 on success, error code (always negative) otherwise.

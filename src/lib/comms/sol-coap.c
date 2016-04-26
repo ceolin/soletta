@@ -1750,7 +1750,7 @@ sol_coap_server_new_full(struct sol_socket_ip_options *options, const struct sol
     SOL_NULL_CHECK(server, NULL);
 
     options->base.data = server;
-    s = sol_socket_ip_new(&options->base);
+    s = sol_socket_new(SOL_SOCKET_TYPE_IP, &options->base);
     if (!s) {
         SOL_WRN("Could not create socket (%d): %s", errno, sol_util_strerrora(errno));
         goto err;
