@@ -34,6 +34,13 @@ config BLUETOOTH_BLUEZ
 	help
             This implementation will use BlueZ via its D-Bus API.
 
+config BLUETOOTH_ZEPHYR
+	bool "Bluetooth Zephyr"
+	depends on FEATURE_BLUETOOTH && ZEPHYR
+	select BLUETOOTH
+	help
+            This implementation will use BlueZ via its D-Bus API.
+
 config BLUETOOTH_NONE
        bool "None"
        depends on FEATURE_BLUETOOTH
