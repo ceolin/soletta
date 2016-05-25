@@ -19,6 +19,7 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/conn.h>
 #include <bluetooth/uuid.h>
+#include <nanokernel.h>
 
 struct context {
     char *adapter_path;
@@ -26,6 +27,7 @@ struct context {
     struct sol_ptr_vector sessions;
     struct sol_ptr_vector scans;
     struct sol_ptr_vector conns;
+    struct nano_sem sem;
     bool adapter_powered;
 };
 
@@ -38,5 +40,36 @@ struct sol_bt_conn {
     const void *user_data;
     int ref;
 };
+
+#ifdef HAVE_ZEPHYR_GATT
+
+enum pending_type {
+    PENDING_READ,
+    PENDING_WRITE,
+    PENDING_NOTIFY,
+    PENDING_INDICATE,
+    PENDING_REMOTE_READ,
+    PENDING_REMOTE_WRITE,
+};
+
+struct sol_gatt_pending {
+    const struct sol_gatt_attr *attr;
+    struct sol_buffer buf;
+    union {
+        void (*read)(void *user_data, bool success,
+            const struct sol_gatt_attr *attr,
+            const struct sol_buffer *buf);
+        void (*write)(void *user_data, bool success,
+            const struct sol_gatt_attr *attr);
+    };
+    const void *user_data;
+    int error;
+    enum pending_type type;
+    uint16_t offset;
+};
+
+void clear_applications(void);
+
+#endif
 
 struct context *bluetooth_get_context(void);

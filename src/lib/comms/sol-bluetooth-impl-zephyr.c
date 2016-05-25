@@ -269,6 +269,8 @@ bt_ready_cb(int err)
     } else {
         context.adapter_powered = true;
         bt_conn_cb_register(&connection_callbacks);
+
+        nano_sem_init(&context.sem);
     }
 
     SOL_PTR_VECTOR_FOREACH_IDX (&context.sessions, session, idx) {

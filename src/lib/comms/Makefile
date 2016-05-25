@@ -149,7 +149,10 @@ obj-bluetooth-$(BLUETOOTH_NONE) += \
 	sol-gatt-impl-none.o
 
 obj-bluetooth-$(BLUETOOTH_ZEPHYR) += \
-	sol-bluetooth-impl-zephyr.o \
+	sol-bluetooth-impl-zephyr.o
+
+obj-bluetooth-$(HAVE_ZEPHYR_GATT) += \
+	sol-gatt-impl-zephyr.o
 
 headers-$(NETWORK) += \
     include/sol-network.h \

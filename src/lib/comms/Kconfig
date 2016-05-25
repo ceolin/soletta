@@ -41,6 +41,14 @@ config BLUETOOTH_ZEPHYR
 	help
             This implementation will use BlueZ via its D-Bus API.
 
+config BLUETOOTH_GATT_ZEPHYR
+	bool "Bluetooth GATT Zephyr"
+	default y
+	depends on HAVE_ZEPHYR_GATT
+	select BLUETOOTH
+	help
+            This implementation will use Zephyr GATT api.
+
 config BLUETOOTH_NONE
        bool "None"
        depends on FEATURE_BLUETOOTH

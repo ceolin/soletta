@@ -296,6 +296,11 @@
       "fragment": "#ifndef CONFIG_BLUETOOTH_BREDR\n#error \"Bluetooth BREDR not supported\"\n#endif\n"
     },
     {
+      "dependency": "zephyr_gatt",
+      "type": "ccode",
+      "fragment": "#if !defined(CONFIG_BLUETOOTH_CENTRAL) || !defined(CONFIG_BLUETOOTH_PERIPHERAL)\n#error \"Bluetooth GATT not supported\"\n#endif\n"
+    },
+    {
       "dependency": "zephyr_micro",
       "type": "ccode",
       "fragment": "#ifndef CONFIG_MICROKERNEL\n#error \"Microkernel not supported\"\n#endif\n"
